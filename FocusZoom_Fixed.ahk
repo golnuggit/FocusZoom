@@ -25,6 +25,7 @@ global gViewport := Map("x", 200, "y", 200, "w", 600, "h", 400)
 global gViewportSet := false        ; true when user has set viewport
 global gZones := []                 ; each: {x,y,w,h}
 global gCurIdx := 0                 ; current zone index (1-based), 0 = overview
+global gLastHotkeyTime := 0         ; debounce for zone hotkeys
 global gCurSrc := Map("x", 0, "y", 0, "w", 300, "h", 200) ; current source rect
 global gAnimSrcStart := Map("x", 0, "y", 0, "w", 300, "h", 200)
 global gTgtSrc := Map("x", 0, "y", 0, "w", 300, "h", 200)
@@ -702,7 +703,14 @@ Overview(*) {
 }
 
 PrevZone(*) {
-    global gCurIdx, gZones
+    global gCurIdx, gZones, gLastHotkeyTime
+
+    ; Debounce
+    now := A_TickCount
+    if (now - gLastHotkeyTime < 200)
+        return
+    gLastHotkeyTime := now
+
     if (gZones.Length = 0)
         return
     gCurIdx := (gCurIdx <= 1) ? gZones.Length : (gCurIdx - 1)
@@ -710,7 +718,14 @@ PrevZone(*) {
 }
 
 NextZone(*) {
-    global gCurIdx, gZones
+    global gCurIdx, gZones, gLastHotkeyTime
+
+    ; Debounce
+    now := A_TickCount
+    if (now - gLastHotkeyTime < 200)
+        return
+    gLastHotkeyTime := now
+
     if (gZones.Length = 0)
         return
     gCurIdx := (gCurIdx >= gZones.Length) ? 1 : (gCurIdx + 1)
@@ -850,7 +865,15 @@ MakeZoneHotkey(idx) {
 }
 
 ToggleZone(idx) {
-    global gCurIdx
+    global gCurIdx, gLastHotkeyTime
+
+    ; Debounce: ignore if less than 200ms since last hotkey
+    now := A_TickCount
+    if (now - gLastHotkeyTime < 200) {
+        return
+    }
+    gLastHotkeyTime := now
+
     ; If already viewing this zone, zoom out to overview
     if (gCurIdx = idx) {
         Overview()
