@@ -15,7 +15,6 @@ InitDpiAwareness()
 ; - GDI capture/scale (StretchBlt) for a quick POC.
 
 ; --------------- Settings ---------------
-global gZoom        := 2.0          ; default zoom (2.0x)
 global gTransition  := 300          ; ms for zone transition animation
 global gFrameMs     := 33           ; ~30 fps while live (raise to 50–66 if CPU high)
 global gPaused      := false
@@ -64,10 +63,10 @@ Hotkey("^+p", (*) => TogglePause())
 Hotkey("^+q", (*) => ExitApp())  ; Ctrl+Shift+Q to quit
 
 ; =============== UI: Setup Window =================
-global gSetup, gZonesList, gZoomEdit, gTransEdit
+global gSetup, gZonesList, gTransEdit
 
 MakeSetupUi() {
-    global gSetup, gZonesList, gZoomEdit, gTransEdit
+    global gSetup, gZonesList, gTransEdit
 
     if IsSet(gSetup) && IsObject(gSetup) {
         try gSetup.Destroy()
@@ -80,6 +79,7 @@ MakeSetupUi() {
     gSetup.Add("Button", "w130", "Set Viewport").OnEvent("Click", (*) => SetViewport())
 
     gSetup.Add("Text", "y+10", "2) Click 'Add Zone' and drag rectangles over areas you want to zoom.")
+    gSetup.Add("Text", "y+5", "(Zones will auto-match viewport aspect ratio)")
     btnAdd := gSetup.Add("Button", "w130", "Add Zone")
     btnAdd.OnEvent("Click", (*) => AddZone())
 
@@ -92,9 +92,7 @@ MakeSetupUi() {
     bDel.OnEvent("Click", (*) => DelSelectedZone())
     bClr.OnEvent("Click", (*) => ClearZones())
 
-    gSetup.Add("Text", "y+10", "Zoom (e.g., 2.0):")
-    gZoomEdit := gSetup.Add("Edit", "w80", gZoom)
-    gSetup.Add("Text", "x+10", "Transition ms:")
+    gSetup.Add("Text", "y+10", "Transition ms:")
     gTransEdit := gSetup.Add("Edit", "w80", gTransition)
 
     gSetup.Add("Button", "y+10 w120", "Save Preset").OnEvent("Click", (*) => SavePreset())
@@ -117,7 +115,7 @@ ShowSetup() {
 }
 
 ; =============== Selection helpers ================
-SelectRect(prompt := "Drag to select a rectangle") {
+SelectRect(prompt := "Drag to select a rectangle", aspectRatio := 0) {
     ToolTip(prompt)
 
     KeyWait("LButton", "D")
@@ -136,10 +134,31 @@ SelectRect(prompt := "Drag to select a rectangle") {
         Sleep 10
         MouseGetPos &mx, &my
         ClampPointToRect(&mx, &my, screen)
+
+        ; Calculate base rectangle from drag
+        baseW := Abs(mx - sx)
+        baseH := Abs(my - sy)
+
+        ; If aspect ratio is specified, constrain the rectangle
+        if (aspectRatio > 0) {
+            ; Use the larger dimension and calculate the other
+            if (baseW / aspectRatio > baseH) {
+                ; Width is the constraining dimension
+                rect.w := baseW
+                rect.h := Floor(baseW / aspectRatio)
+            } else {
+                ; Height is the constraining dimension
+                rect.h := baseH
+                rect.w := Floor(baseH * aspectRatio)
+            }
+        } else {
+            rect.w := baseW
+            rect.h := baseH
+        }
+
         rect.x := (mx < sx) ? mx : sx
         rect.y := (my < sy) ? my : sy
-        rect.w := Abs(mx - sx)
-        rect.h := Abs(my - sy)
+
         if rect.w < 2
             rect.w := 2
         if rect.h < 2
@@ -310,8 +329,14 @@ SetViewport() {
 }
 
 AddZone() {
-    global gZones
-    r := SelectRect("Drag to set a ZONE (source area)")
+    global gZones, gViewport, gViewportSet
+    if !gViewportSet {
+        MsgBox "Please set the viewport first before adding zones."
+        return
+    }
+    ; Calculate viewport aspect ratio
+    aspectRatio := gViewport["w"] / Max(gViewport["h"], 1)
+    r := SelectRect("Drag to set a ZONE (will match viewport aspect ratio)", aspectRatio)
     if !IsObject(r)
         return
     gZones.Push(Map("x", r.x, "y", r.y, "w", r.w, "h", r.h))
@@ -401,14 +426,13 @@ EnsurePresetDir() {
     DirCreate dir
 }
 SavePreset() {
-    global gViewport, gZones, gZoom, gTransition, gPresetPath, gZoomEdit, gTransEdit
+    global gViewport, gZones, gTransition, gPresetPath, gTransEdit
     EnsurePresetDir()
     SyncSettingsFromInputs()
     IniWrite gViewport["x"], gPresetPath, "Viewport", "x"
     IniWrite gViewport["y"], gPresetPath, "Viewport", "y"
     IniWrite gViewport["w"], gPresetPath, "Viewport", "w"
     IniWrite gViewport["h"], gPresetPath, "Viewport", "h"
-    IniWrite gZoom, gPresetPath, "Settings", "Zoom"
     IniWrite gTransition, gPresetPath, "Settings", "TransitionMs"
     IniWrite gZones.Length, gPresetPath, "Settings", "ZoneCount"
     for idx, z in gZones {
@@ -422,7 +446,7 @@ SavePreset() {
 }
 
 LoadPreset() {
-    global gViewport, gViewportSet, gZones, gZoom, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused
+    global gViewport, gViewportSet, gZones, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused, gTransEdit
     if !FileExist(gPresetPath) {
         MsgBox "No preset found at:`n" gPresetPath
         return
@@ -432,10 +456,7 @@ LoadPreset() {
     gViewport["w"] := Integer(IniRead(gPresetPath, "Viewport", "w", gViewport["w"]))
     gViewport["h"] := Integer(IniRead(gPresetPath, "Viewport", "h", gViewport["h"]))
     gViewportSet := true
-    gZoom := Number(IniRead(gPresetPath, "Settings", "Zoom", gZoom))
     gTransition := Integer(IniRead(gPresetPath, "Settings", "TransitionMs", gTransition))
-    if (gZoom <= 0)
-        gZoom := 0.1
     if (gTransition < 0)
         gTransition := 0
     cnt := Integer(IniRead(gPresetPath, "Settings", "ZoneCount", 0))
@@ -451,8 +472,6 @@ LoadPreset() {
     }
     if IsSet(gSetup) && IsObject(gSetup)
         RefreshZonesList()
-    if IsObject(gZoomEdit)
-        gZoomEdit.Value := gZoom
     if IsObject(gTransEdit)
         gTransEdit.Value := gTransition
     UpdateVisualOutlines()
@@ -684,7 +703,7 @@ NextZone(*) {
 }
 
 JumpToZone(idx, animate := true) {
-    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gZoom, gPaused, gCurIdx
+    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gPaused, gCurIdx
     if (idx < 1 || idx > gZones.Length)
         return
     EnsureOverlayGui()
@@ -692,7 +711,7 @@ JumpToZone(idx, animate := true) {
     if !gPaused
         StartRendering()
     z := gZones[idx]
-    tgt := ComputeSourceRect(z, gZoom)
+    tgt := ComputeSourceRect(z)
     gTgtSrc := tgt
     gCurIdx := idx
     if !animate {
@@ -707,18 +726,9 @@ JumpToZone(idx, animate := true) {
     gAnimEnd := gAnimStart + gTransition
 }
 
-ComputeSourceRect(zone, zoom) {
-    global gViewport
-    minZoomW := gViewport["w"] / Max(zone["w"], 1)
-    minZoomH := gViewport["h"] / Max(zone["h"], 1)
-    effZoom := Max(zoom, Max(minZoomW, minZoomH))
-    sw := Max(1, Floor(gViewport["w"] / effZoom))
-    sh := Max(1, Floor(gViewport["h"] / effZoom))
-    sx := zone["x"] + Floor((zone["w"] - sw) / 2)
-    sy := zone["y"] + Floor((zone["h"] - sh) / 2)
-    sx := Clamp(sx, zone["x"], zone["x"] + zone["w"] - sw)
-    sy := Clamp(sy, zone["y"], zone["y"] + zone["h"] - sh)
-    return Map("x", sx, "y", sy, "w", sw, "h", sh)
+ComputeSourceRect(zone) {
+    ; Since zones now match viewport aspect ratio, just use the zone directly
+    return Map("x", zone["x"], "y", zone["y"], "w", zone["w"], "h", zone["h"])
 }
 
 StartRendering() {
@@ -864,19 +874,15 @@ ApplyColorKey(hwnd, color) {
 }
 
 SyncSettingsFromInputs() {
-    global gZoom, gTransition, gZoomEdit, gTransEdit
-    if IsObject(gZoomEdit) && gZoomEdit.Value != ""
-        gZoom := Number(gZoomEdit.Value)
+    global gTransition, gTransEdit
     if IsObject(gTransEdit) && gTransEdit.Value != ""
         gTransition := Integer(gTransEdit.Value)
-    if (gZoom <= 0)
-        gZoom := 0.1
     if (gTransition < 0)
         gTransition := 0
 }
 
 ResetAnimationToCurrentZone(instant := true) {
-    global gCurIdx, gZones, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gZoom
+    global gCurIdx, gZones, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd
     if (gCurIdx < 1 || gCurIdx > gZones.Length) {
         ; No valid zone, reset to a default
         gCurSrc := Map("x", 0, "y", 0, "w", 300, "h", 200)
@@ -887,7 +893,7 @@ ResetAnimationToCurrentZone(instant := true) {
         return
     }
     z := gZones[gCurIdx]
-    tgt := ComputeSourceRect(z, gZoom)
+    tgt := ComputeSourceRect(z)
     gTgtSrc := tgt
     if instant {
         gCurSrc := CloneRect(tgt)
