@@ -110,16 +110,23 @@ ShowSetup() {
 ; =============== Selection helpers ================
 SelectRect(prompt := "Drag to select a rectangle") {
     ToolTip(prompt)
-    sel := Gui("+AlwaysOnTop -Caption +ToolWindow +Border")
-    sel.Show("NA x0 y0 w1 h1")
 
     KeyWait("LButton", "D")
     MouseGetPos &sx, &sy
+    screen := GetVirtualScreenRect()
+    ClampPointToRect(&sx, &sy, screen)
+    overlay := CreateSelectionOverlay()
     rect := {x: sx, y: sy, w: 1, h: 1}
+    cancelled := false
 
     while GetKeyState("LButton", "P") {
+        if GetKeyState("Esc", "P") {
+            cancelled := true
+            break
+        }
         Sleep 10
         MouseGetPos &mx, &my
+        ClampPointToRect(&mx, &my, screen)
         rect.x := (mx < sx) ? mx : sx
         rect.y := (my < sy) ? my : sy
         rect.w := Abs(mx - sx)
@@ -128,17 +135,74 @@ SelectRect(prompt := "Drag to select a rectangle") {
             rect.w := 2
         if rect.h < 2
             rect.h := 2
-        sel.Show(Format("NA x{} y{} w{} h{}", rect.x, rect.y, rect.w, rect.h))
+        UpdateSelectionOverlay(overlay, rect)
     }
-    sel.Destroy()
+    DestroySelectionOverlay(overlay)
     ToolTip()
+    if cancelled
+        return 0
+    if rect.w < 2
+        rect.w := 2
+    if rect.h < 2
+        rect.h := 2
     return rect
+}
+
+CreateSelectionOverlay(borderColor := 0xFF8800, thickness := 2) {
+    bgColor := 0x010101
+    gui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x80000 +E0x20")
+    gui.MarginX := 0
+    gui.MarginY := 0
+    gui.BackColor := Format("0x{:06X}", bgColor)
+
+    opts := Format("Background0x{:06X} -Smooth", borderColor)
+    top := gui.Add("Progress", opts " x0 y0 w10 h" thickness)
+    bottom := gui.Add("Progress", opts " x0 y0 w10 h" thickness)
+    left := gui.Add("Progress", opts " x0 y0 w" thickness " h10")
+    right := gui.Add("Progress", opts " x0 y0 w" thickness " h10")
+    top.Value := 100
+    bottom.Value := 100
+    left.Value := 100
+    right.Value := 100
+
+    gui.Show("NA x0 y0 w1 h1")
+
+    ApplyColorKey(gui.Hwnd, bgColor)
+
+    return Map(
+        "gui", gui
+      , "thickness", thickness
+      , "edges", Map("top", top, "bottom", bottom, "left", left, "right", right)
+    )
+}
+
+UpdateSelectionOverlay(overlay, rect) {
+    if !IsObject(overlay)
+        return
+    gui := overlay["gui"]
+    edges := overlay["edges"]
+    thickness := overlay["thickness"]
+    w := Max(rect.w, thickness)
+    h := Max(rect.h, thickness)
+    gui.Show(Format("NA x{} y{} w{} h{}", rect.x, rect.y, w, h))
+    edges["top"].Move(0, 0, w, thickness)
+    edges["bottom"].Move(0, Max(0, h - thickness), w, thickness)
+    edges["left"].Move(0, 0, thickness, h)
+    edges["right"].Move(Max(0, w - thickness), 0, thickness, h)
+}
+
+DestroySelectionOverlay(overlay) {
+    if !IsObject(overlay)
+        return
+    try overlay["gui"].Destroy()
 }
 
 ; =============== Setup actions ====================
 SetViewport() {
     global gViewport, gOverlayHwnd, gRenderOn, gPaused
     r := SelectRect("Drag to set the VIEWPORT (destination box)")
+    if !IsObject(r)
+        return
     gViewport := Map("x", r.x, "y", r.y, "w", r.w, "h", r.h)
     MsgBox "Viewport set to: " RectStr(gViewport)
     if gOverlayHwnd {
@@ -155,27 +219,36 @@ SetViewport() {
 AddZone() {
     global gZones
     r := SelectRect("Drag to set a ZONE (source area)")
+    if !IsObject(r)
+        return
     gZones.Push(Map("x", r.x, "y", r.y, "w", r.w, "h", r.h))
-    RefreshZonesList()
+    OnZonesChanged()
 }
 
 DelSelectedZone() {
-    global gZones, gZonesList
+    global gZones, gZonesList, gCurIdx
     idx := gZonesList.Value
     if !idx
         return
     gZones.RemoveAt(idx)
-    RefreshZonesList()
+    if (gCurIdx = idx)
+        gCurIdx := Min(idx, gZones.Length)
+    else if (gCurIdx > idx)
+        gCurIdx -= 1
+    if (gCurIdx > gZones.Length)
+        gCurIdx := gZones.Length
+    OnZonesChanged()
 }
 
 ClearZones() {
-    global gZones
+    global gZones, gCurIdx
     gZones := []
-    RefreshZonesList()
+    gCurIdx := 0
+    OnZonesChanged()
 }
 
 RefreshZonesList() {
-    global gZones, gZonesList
+    global gZones, gZonesList, gCurIdx
     if !IsObject(gZonesList)
         return
     items := []
@@ -186,6 +259,35 @@ RefreshZonesList() {
         gZonesList.Delete(1, gZonesList.Count)
     if items.Length
         gZonesList.Add(items*)
+    if (gCurIdx >= 1 && gCurIdx <= gZones.Length)
+        gZonesList.Value := gCurIdx
+    else
+        gZonesList.Value := 0
+}
+
+OnZonesChanged() {
+    global gZones, gCurIdx, gRenderOn, gPaused, gOverlay
+    RefreshZonesList()
+    if (gZones.Length = 0) {
+        if gCurIdx != 0
+            gCurIdx := 0
+        if gRenderOn
+            Overview()
+        else if IsObject(gOverlay)
+            gOverlay.Hide()
+        ResetAnimationToCurrentZone()
+        return
+    }
+    if (gCurIdx < 1)
+        gCurIdx := 1
+    else if (gCurIdx > gZones.Length)
+        gCurIdx := gZones.Length
+    if gRenderOn && !gPaused
+        JumpToZone(gCurIdx, false)
+    else if (gPaused && IsObject(gOverlay) && gOverlay.Visible)
+        ResetAnimationToCurrentZone(true)
+    else
+        ResetAnimationToCurrentZone()
 }
 
 RectStr(r) {
@@ -200,8 +302,7 @@ EnsurePresetDir() {
 SavePreset() {
     global gViewport, gZones, gZoom, gTransition, gPresetPath, gZoomEdit, gTransEdit
     EnsurePresetDir()
-    Try gZoom := Number(gZoomEdit.Value)
-    Try gTransition := Integer(gTransEdit.Value)
+    SyncSettingsFromInputs()
     IniWrite gViewport["x"], gPresetPath, "Viewport", "x"
     IniWrite gViewport["y"], gPresetPath, "Viewport", "y"
     IniWrite gViewport["w"], gPresetPath, "Viewport", "w"
@@ -231,6 +332,10 @@ LoadPreset() {
     gViewport["h"] := Integer(IniRead(gPresetPath, "Viewport", "h", gViewport["h"]))
     gZoom := Number(IniRead(gPresetPath, "Settings", "Zoom", gZoom))
     gTransition := Integer(IniRead(gPresetPath, "Settings", "TransitionMs", gTransition))
+    if (gZoom <= 0)
+        gZoom := 0.1
+    if (gTransition < 0)
+        gTransition := 0
     cnt := Integer(IniRead(gPresetPath, "Settings", "ZoneCount", 0))
     gZones := []
     loop cnt {
