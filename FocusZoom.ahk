@@ -199,27 +199,20 @@ DestroySelectionOverlay(overlay) {
 
 ; =============== Setup actions ====================
 SetViewport() {
-    global gViewport, gOverlayHwnd, gRenderOn, gPaused, gCurIdx, gZones, gOverlay
+    global gViewport, gOverlayHwnd, gRenderOn, gPaused
     r := SelectRect("Drag to set the VIEWPORT (destination box)")
     if !IsObject(r)
         return
     gViewport := Map("x", r.x, "y", r.y, "w", r.w, "h", r.h)
     MsgBox "Viewport set to: " RectStr(gViewport)
     if gOverlayHwnd {
-        wasVisible := IsObject(gOverlay) && gOverlay.Visible
         wasRendering := gRenderOn
         if wasRendering
             StopRendering()
         EnsureOverlayResources(gViewport["w"], gViewport["h"])
         PositionOverlay()
-        if (gCurIdx >= 1 && gCurIdx <= gZones.Length) {
-            showFrame := (!wasRendering && gPaused && IsObject(gOverlay) && gOverlay.Visible)
-            ResetAnimationToCurrentZone(showFrame)
-        }
         if wasRendering && !gPaused
             StartRendering()
-        if !wasVisible && IsObject(gOverlay)
-            gOverlay.Hide()
     }
 }
 
@@ -262,10 +255,8 @@ RefreshZonesList() {
     for idx, z in gZones
         items.Push(Format("{:d}) {}", idx, RectStr(z)))
     ; Clear existing entries safely.
-    count := gZonesList.GetCount()
-    if count
-        Loop count
-            gZonesList.Delete(1)
+    if gZonesList.Count
+        gZonesList.Delete(1, gZonesList.Count)
     if items.Length
         gZonesList.Add(items*)
     if (gCurIdx >= 1 && gCurIdx <= gZones.Length)
@@ -330,7 +321,7 @@ SavePreset() {
 }
 
 LoadPreset() {
-    global gViewport, gZones, gZoom, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused, gCurIdx, gOverlay
+    global gViewport, gZones, gZoom, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused
     if !FileExist(gPresetPath) {
         MsgBox "No preset found at:`n" gPresetPath
         return
@@ -362,19 +353,15 @@ LoadPreset() {
         gZoomEdit.Value := gZoom
     if IsObject(gTransEdit)
         gTransEdit.Value := gTransition
-    wasRendering := gRenderOn
-    wasVisible := IsObject(gOverlay) && gOverlay.Visible
     if gOverlayHwnd {
+        wasRendering := gRenderOn
         if wasRendering
             StopRendering()
         EnsureOverlayResources(gViewport["w"], gViewport["h"])
         PositionOverlay()
-        if !wasVisible && IsObject(gOverlay)
-            gOverlay.Hide()
+        if wasRendering && !gPaused
+            StartRendering()
     }
-    OnZonesChanged()
-    if gOverlayHwnd && wasRendering && !gPaused
-        StartRendering()
     MsgBox "Preset loaded."
 }
 
@@ -389,7 +376,6 @@ ToggleSetup() {
 
 GoLive() {
     global gOverlay, gOverlayHwnd, gRenderOn, gCurIdx, gViewport, gZones, gPaused
-    SyncSettingsFromInputs()
 
     if (gViewport["w"] < 10 || gViewport["h"] < 10) {
         MsgBox "Please set a valid viewport first."
@@ -502,28 +488,12 @@ PresentFrame(srcRect, vpRect) {
     if !hdcScreen
         return
     DllCall("gdi32\SetStretchBltMode", "ptr", gOverlayDC, "int", 4) ; HALFTONE
-    DllCall("gdi32\SetBrushOrgEx", "ptr", gOverlayDC, "int", 0, "int", 0, "ptr", 0)
-    clip := ClipRectToVirtualScreen(srcRect)
-    if (clip["w"] <= 0 || clip["h"] <= 0) {
-        DllCall("gdi32\PatBlt", "ptr", gOverlayDC, "int", 0, "int", 0, "int", vpRect["w"], "int", vpRect["h"], "uint", 0x00000042)
-    } else {
-        ok := DllCall("gdi32\StretchBlt"
-            , "ptr", gOverlayDC
-            , "int", 0, "int", 0, "int", vpRect["w"], "int", vpRect["h"]
-            , "ptr", hdcScreen
-            , "int", clip["x"], "int", clip["y"], "int", clip["w"], "int", clip["h"]
-            , "uint", 0x00CC0020
-            , "int")
-        if !ok {
-            DllCall("gdi32\StretchBlt"
-                , "ptr", gOverlayDC
-                , "int", 0, "int", 0, "int", vpRect["w"], "int", vpRect["h"]
-                , "ptr", hdcScreen
-                , "int", clip["x"], "int", clip["y"], "int", clip["w"], "int", clip["h"]
-                , "uint", 0x00EE0086
-                , "int")
-        }
-    }
+    DllCall("gdi32\StretchBlt"
+        , "ptr", gOverlayDC
+        , "int", 0, "int", 0, "int", vpRect["w"], "int", vpRect["h"]
+        , "ptr", hdcScreen
+        , "int", srcRect["x"], "int", srcRect["y"], "int", srcRect["w"], "int", srcRect["h"]
+        , "uint", 0x00CC0020)
     DllCall("user32\ReleaseDC", "ptr", 0, "ptr", hdcScreen)
 
     FillAlphaChannel(vpRect["w"], vpRect["h"])
@@ -605,12 +575,11 @@ NextZone(*) {
 }
 
 JumpToZone(idx, animate := true) {
-    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gZoom, gPaused, gCurIdx, gViewport
+    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gZoom, gPaused, gCurIdx
     if (idx < 1 || idx > gZones.Length)
         return
     EnsureOverlayGui()
     PositionOverlay()
-    EnsureOverlayResources(gViewport["w"], gViewport["h"])
     if !gPaused
         StartRendering()
     z := gZones[idx]
@@ -743,91 +712,4 @@ Clamp(val, minVal, maxVal) {
 
 MakeZoneHotkey(idx) {
     return (*) => JumpToZone(idx)
-}
-
-ApplyColorKey(hwnd, rgbColor) {
-    bgr := RgbToBgr(rgbColor)
-    DllCall("user32\SetLayeredWindowAttributes", "ptr", hwnd, "uint", bgr, "uchar", 0, "uint", 1)
-}
-
-RgbToBgr(color) {
-    return ((color & 0xFF) << 16) | (color & 0xFF00) | ((color >> 16) & 0xFF)
-}
-
-ResetAnimationToCurrentZone(present := false) {
-    global gCurIdx, gZones, gZoom, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gViewport, gOverlayHwnd
-    if (gCurIdx < 1 || gCurIdx > gZones.Length) {
-        gAnimStart := 0
-        gAnimEnd := 0
-        return
-    }
-    tgt := ComputeSourceRect(gZones[gCurIdx], gZoom)
-    gTgtSrc := CloneRect(tgt)
-    gCurSrc := CloneRect(tgt)
-    gAnimSrcStart := CloneRect(tgt)
-    gAnimStart := 0
-    gAnimEnd := 0
-    if present && gOverlayHwnd {
-        EnsureOverlayResources(gViewport["w"], gViewport["h"])
-        PositionOverlay()
-        PresentFrame(gCurSrc, gViewport)
-    }
-}
-
-SyncSettingsFromInputs() {
-    global gZoomEdit, gTransEdit, gZoom, gTransition
-    if IsObject(gZoomEdit) {
-        try {
-            val := Number(gZoomEdit.Value)
-        } catch {
-            val := gZoom
-        }
-        if (val <= 0)
-            val := 0.1
-        gZoom := val
-        gZoomEdit.Value := gZoom
-    }
-    if IsObject(gTransEdit) {
-        try {
-            t := Integer(gTransEdit.Value)
-        } catch {
-            t := gTransition
-        }
-        if (t < 0)
-            t := 0
-        gTransition := t
-        gTransEdit.Value := gTransition
-    }
-}
-
-GetVirtualScreenRect() {
-    left := DllCall("user32\GetSystemMetrics", "int", 76, "int") ; SM_XVIRTUALSCREEN
-    top := DllCall("user32\GetSystemMetrics", "int", 77, "int")  ; SM_YVIRTUALSCREEN
-    width := DllCall("user32\GetSystemMetrics", "int", 78, "int") ; SM_CXVIRTUALSCREEN
-    height := DllCall("user32\GetSystemMetrics", "int", 79, "int") ; SM_CYVIRTUALSCREEN
-    return Map("x", left, "y", top, "w", width, "h", height)
-}
-
-ClampPointToRect(&x, &y, rect) {
-    maxX := rect["x"] + rect["w"] - 1
-    maxY := rect["y"] + rect["h"] - 1
-    if (x < rect["x"])
-        x := rect["x"]
-    else if (x > maxX)
-        x := maxX
-    if (y < rect["y"])
-        y := rect["y"]
-    else if (y > maxY)
-        y := maxY
-}
-
-ClipRectToVirtualScreen(rect) {
-    screen := GetVirtualScreenRect()
-    left := Max(rect["x"], screen["x"])
-    top := Max(rect["y"], screen["y"])
-    right := Min(rect["x"] + rect["w"], screen["x"] + screen["w"])
-    bottom := Min(rect["y"] + rect["h"], screen["y"] + screen["h"])
-    if (right <= left || bottom <= top)
-        return Map("x", 0, "y", 0, "w", 0, "h", 0)
-    return Map("x", left, "y", top, "w", right - left, "h", bottom - top)
 }
