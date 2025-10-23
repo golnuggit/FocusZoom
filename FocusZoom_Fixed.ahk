@@ -23,6 +23,7 @@ global gPresetPath  := A_AppData "\FocusZoom\preset.ini"
 
 ; --------------- State ------------------
 global gViewport := Map("x", 200, "y", 200, "w", 600, "h", 400)
+global gViewportSet := false        ; true when user has set viewport
 global gZones := []                 ; each: {x,y,w,h}
 global gCurIdx := 0                 ; current zone index (1-based), 0 = overview
 global gCurSrc := Map("x", 0, "y", 0, "w", 300, "h", 200) ; current source rect
@@ -240,7 +241,7 @@ CreatePersistentOutline(rect, color := 0x00FF00, thickness := 3) {
 }
 
 UpdateVisualOutlines() {
-    global gViewport, gZones, gViewportOutline, gZoneOutlines, gRenderOn
+    global gViewport, gZones, gViewportOutline, gZoneOutlines, gRenderOn, gViewportSet
 
     ; Only show outlines when NOT in live mode
     if gRenderOn {
@@ -248,11 +249,14 @@ UpdateVisualOutlines() {
         return
     }
 
-    ; Update viewport outline (blue)
+    ; Update viewport outline (blue) - only if user has set it
     if IsObject(gViewportOutline) {
         try gViewportOutline["gui"].Destroy()
+        gViewportOutline := 0
     }
-    gViewportOutline := CreatePersistentOutline(gViewport, 0x0000FF, 3)
+    if gViewportSet {
+        gViewportOutline := CreatePersistentOutline(gViewport, 0x0000FF, 3)
+    }
 
     ; Clear old zone outlines
     for outline in gZoneOutlines {
@@ -283,11 +287,12 @@ HideVisualOutlines() {
 
 ; =============== Setup actions ====================
 SetViewport() {
-    global gViewport, gOverlayHwnd, gRenderOn, gPaused
+    global gViewport, gViewportSet, gOverlayHwnd, gRenderOn, gPaused
     r := SelectRect("Drag to set the VIEWPORT (destination box)")
     if !IsObject(r)
         return
     gViewport := Map("x", r.x, "y", r.y, "w", r.w, "h", r.h)
+    gViewportSet := true
     MsgBox "Viewport set to: " RectStr(gViewport)
     UpdateVisualOutlines()
     if gOverlayHwnd {
@@ -414,7 +419,7 @@ SavePreset() {
 }
 
 LoadPreset() {
-    global gViewport, gZones, gZoom, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused
+    global gViewport, gViewportSet, gZones, gZoom, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused
     if !FileExist(gPresetPath) {
         MsgBox "No preset found at:`n" gPresetPath
         return
@@ -423,6 +428,7 @@ LoadPreset() {
     gViewport["y"] := Integer(IniRead(gPresetPath, "Viewport", "y", gViewport["y"]))
     gViewport["w"] := Integer(IniRead(gPresetPath, "Viewport", "w", gViewport["w"]))
     gViewport["h"] := Integer(IniRead(gPresetPath, "Viewport", "h", gViewport["h"]))
+    gViewportSet := true
     gZoom := Number(IniRead(gPresetPath, "Settings", "Zoom", gZoom))
     gTransition := Integer(IniRead(gPresetPath, "Settings", "TransitionMs", gTransition))
     if (gZoom <= 0)
@@ -469,8 +475,12 @@ ToggleSetup() {
 }
 
 GoLive() {
-    global gOverlay, gOverlayHwnd, gRenderOn, gCurIdx, gViewport, gZones, gPaused
+    global gOverlay, gOverlayHwnd, gRenderOn, gCurIdx, gViewport, gViewportSet, gZones, gPaused
 
+    if !gViewportSet {
+        MsgBox "Please set the viewport first by clicking 'Set Viewport' and dragging a box."
+        return
+    }
     if (gViewport["w"] < 10 || gViewport["h"] < 10) {
         MsgBox "Please set a valid viewport first."
         return
@@ -808,7 +818,17 @@ Clamp(val, minVal, maxVal) {
 }
 
 MakeZoneHotkey(idx) {
-    return (*) => JumpToZone(idx)
+    return (*) => ToggleZone(idx)
+}
+
+ToggleZone(idx) {
+    global gCurIdx
+    ; If already viewing this zone, zoom out to overview
+    if (gCurIdx = idx) {
+        Overview()
+    } else {
+        JumpToZone(idx)
+    }
 }
 
 GetVirtualScreenRect() {
