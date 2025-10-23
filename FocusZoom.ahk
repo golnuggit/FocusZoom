@@ -179,12 +179,12 @@ CreateSelectionOverlay(borderColor := 0xFF8800, thickness := 2) {
 UpdateSelectionOverlay(overlay, rect) {
     if !IsObject(overlay)
         return
-    gui := overlay["gui"]
+    selGui := overlay["gui"]
     edges := overlay["edges"]
     thickness := overlay["thickness"]
     w := Max(rect.w, thickness)
     h := Max(rect.h, thickness)
-    gui.Show(Format("NA x{} y{} w{} h{}", rect.x, rect.y, w, h))
+    selGui.Show(Format("NA x{} y{} w{} h{}", rect.x, rect.y, w, h))
     edges["top"].Move(0, 0, w, thickness)
     edges["bottom"].Move(0, Max(0, h - thickness), w, thickness)
     edges["left"].Move(0, 0, thickness, h)
@@ -254,9 +254,14 @@ RefreshZonesList() {
     items := []
     for idx, z in gZones
         items.Push(Format("{:d}) {}", idx, RectStr(z)))
-    ; Clear existing entries safely.
-    if gZonesList.Count
-        gZonesList.Delete(1, gZonesList.Count)
+    ; Clear existing entries safely by deleting items one by one
+    loop 99 {
+        try {
+            gZonesList.Delete(1)
+        } catch {
+            break
+        }
+    }
     if items.Length
         gZonesList.Add(items*)
     if (gCurIdx >= 1 && gCurIdx <= gZones.Length)
