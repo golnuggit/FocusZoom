@@ -611,9 +611,15 @@ PresentFrame(srcRect, vpRect) {
     if !EnsureOverlayResources(vpRect["w"], vpRect["h"])
         return
 
+    ; Temporarily hide the overlay to avoid capturing itself
+    WinHide("ahk_id " gOverlayHwnd)
+    Sleep 5  ; Brief pause to ensure window is hidden
+
     hdcScreen := DllCall("user32\GetDC", "ptr", 0, "ptr")
-    if !hdcScreen
+    if !hdcScreen {
+        WinShow("ahk_id " gOverlayHwnd)
         return
+    }
     DllCall("gdi32\SetStretchBltMode", "ptr", gOverlayDC, "int", 4) ; HALFTONE
     DllCall("gdi32\StretchBlt"
         , "ptr", gOverlayDC
@@ -651,6 +657,9 @@ PresentFrame(srcRect, vpRect) {
         , "uint", 0
         , "ptr", blend.Ptr
         , "uint", 2) ; ULW_ALPHA
+
+    ; Show the overlay again
+    WinShow("ahk_id " gOverlayHwnd)
 }
 
 FillAlphaChannel(width, height) {
