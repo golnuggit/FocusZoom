@@ -150,27 +150,27 @@ SelectRect(prompt := "Drag to select a rectangle") {
 
 CreateSelectionOverlay(borderColor := 0xFF8800, thickness := 2) {
     bgColor := 0x010101
-    gui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x80000 +E0x20")
-    gui.MarginX := 0
-    gui.MarginY := 0
-    gui.BackColor := Format("0x{:06X}", bgColor)
+    selGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x80000 +E0x20")
+    selGui.MarginX := 0
+    selGui.MarginY := 0
+    selGui.BackColor := Format("0x{:06X}", bgColor)
 
     opts := Format("Background0x{:06X} -Smooth", borderColor)
-    top := gui.Add("Progress", opts " x0 y0 w10 h" thickness)
-    bottom := gui.Add("Progress", opts " x0 y0 w10 h" thickness)
-    left := gui.Add("Progress", opts " x0 y0 w" thickness " h10")
-    right := gui.Add("Progress", opts " x0 y0 w" thickness " h10")
+    top := selGui.Add("Progress", opts " x0 y0 w10 h" thickness)
+    bottom := selGui.Add("Progress", opts " x0 y0 w10 h" thickness)
+    left := selGui.Add("Progress", opts " x0 y0 w" thickness " h10")
+    right := selGui.Add("Progress", opts " x0 y0 w" thickness " h10")
     top.Value := 100
     bottom.Value := 100
     left.Value := 100
     right.Value := 100
 
-    gui.Show("NA x0 y0 w1 h1")
+    selGui.Show("NA x0 y0 w1 h1")
 
-    ApplyColorKey(gui.Hwnd, bgColor)
+    ApplyColorKey(selGui.Hwnd, bgColor)
 
     return Map(
-        "gui", gui
+        "gui", selGui
       , "thickness", thickness
       , "edges", Map("top", top, "bottom", bottom, "left", left, "right", right)
     )
@@ -712,4 +712,67 @@ Clamp(val, minVal, maxVal) {
 
 MakeZoneHotkey(idx) {
     return (*) => JumpToZone(idx)
+}
+
+GetVirtualScreenRect() {
+    ; Get the virtual screen coordinates (all monitors combined)
+    x := DllCall("user32\GetSystemMetrics", "int", 76, "int")  ; SM_XVIRTUALSCREEN
+    y := DllCall("user32\GetSystemMetrics", "int", 77, "int")  ; SM_YVIRTUALSCREEN
+    w := DllCall("user32\GetSystemMetrics", "int", 78, "int")  ; SM_CXVIRTUALSCREEN
+    h := DllCall("user32\GetSystemMetrics", "int", 79, "int")  ; SM_CYVIRTUALSCREEN
+    return Map("x", x, "y", y, "w", w, "h", h)
+}
+
+ClampPointToRect(&x, &y, rect) {
+    ; Clamp a point to be within a rectangle
+    if x < rect["x"]
+        x := rect["x"]
+    if x > rect["x"] + rect["w"] - 1
+        x := rect["x"] + rect["w"] - 1
+    if y < rect["y"]
+        y := rect["y"]
+    if y > rect["y"] + rect["h"] - 1
+        y := rect["y"] + rect["h"] - 1
+}
+
+ApplyColorKey(hwnd, color) {
+    ; Make a specific color transparent using WS_EX_LAYERED
+    ex := DllCall("user32\GetWindowLongPtr", "ptr", hwnd, "int", -20, "ptr")
+    ex |= 0x80000  ; WS_EX_LAYERED
+    DllCall("user32\SetWindowLongPtr", "ptr", hwnd, "int", -20, "ptr", ex, "ptr")
+    DllCall("user32\SetLayeredWindowAttributes", "ptr", hwnd, "uint", color, "uchar", 0, "uint", 1)
+}
+
+SyncSettingsFromInputs() {
+    global gZoom, gTransition, gZoomEdit, gTransEdit
+    if IsObject(gZoomEdit) && gZoomEdit.Value != ""
+        gZoom := Number(gZoomEdit.Value)
+    if IsObject(gTransEdit) && gTransEdit.Value != ""
+        gTransition := Integer(gTransEdit.Value)
+    if (gZoom <= 0)
+        gZoom := 0.1
+    if (gTransition < 0)
+        gTransition := 0
+}
+
+ResetAnimationToCurrentZone(instant := true) {
+    global gCurIdx, gZones, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gZoom
+    if (gCurIdx < 1 || gCurIdx > gZones.Length) {
+        ; No valid zone, reset to a default
+        gCurSrc := Map("x", 0, "y", 0, "w", 300, "h", 200)
+        gTgtSrc := CloneRect(gCurSrc)
+        gAnimSrcStart := CloneRect(gCurSrc)
+        gAnimStart := 0
+        gAnimEnd := 0
+        return
+    }
+    z := gZones[gCurIdx]
+    tgt := ComputeSourceRect(z, gZoom)
+    gTgtSrc := tgt
+    if instant {
+        gCurSrc := CloneRect(tgt)
+        gAnimSrcStart := CloneRect(tgt)
+        gAnimStart := 0
+        gAnimEnd := 0
+    }
 }
