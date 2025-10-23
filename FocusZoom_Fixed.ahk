@@ -50,17 +50,18 @@ OnExit(ExitCleanup)
 
 ; --------------- Tray menu --------------
 A_TrayMenu.Delete()
-A_TrayMenu.Add("&Setup / Show", (*) => ShowSetup())
+A_TrayMenu.Add("&Setup / Show (F9)", (*) => ShowSetup())
 A_TrayMenu.Add("&Pause/Resume (Ctrl+Shift+P)", (*) => TogglePause())
 A_TrayMenu.Add("Save Preset", (*) => SavePreset())
 A_TrayMenu.Add("Load Preset", (*) => LoadPreset())
 A_TrayMenu.Add()
-A_TrayMenu.Add("E&xit", (*) => ExitApp())
+A_TrayMenu.Add("E&xit (Ctrl+Shift+Q)", (*) => ExitApp())
 
 ; --------------- Hotkeys ----------------
 ; (Use explicit lambdas so v2 never treats names as uninitialized vars.)
 Hotkey("F9", (*) => ToggleSetup())
 Hotkey("^+p", (*) => TogglePause())
+Hotkey("^+q", (*) => ExitApp())  ; Ctrl+Shift+Q to quit
 
 ; =============== UI: Setup Window =================
 global gSetup, gZonesList, gZoomEdit, gTransEdit
@@ -101,6 +102,8 @@ MakeSetupUi() {
 
     gSetup.Add("Text", "y+10", "3) Click 'Go Live' to start overlay and hotkeys.")
     gSetup.Add("Button", "w120", "Go Live").OnEvent("Click", (*) => GoLive())
+
+    gSetup.Add("Text", "y+10", "Hotkeys: F9=Setup | Ctrl+Shift+P=Pause | Ctrl+Shift+Q=Quit")
 
     gSetup.OnEvent("Close", (*) => gSetup.Hide())
 }
