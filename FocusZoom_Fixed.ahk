@@ -497,7 +497,7 @@ ToggleSetup() {
 }
 
 GoLive() {
-    global gOverlay, gOverlayHwnd, gRenderOn, gCurIdx, gViewport, gViewportSet, gZones, gPaused
+    global gOverlay, gOverlayHwnd, gRenderOn, gCurIdx, gViewport, gViewportSet, gZones, gPaused, gCurSrc, gTgtSrc, gAnimSrcStart
 
     if !gViewportSet {
         MsgBox "Please set the viewport first by clicking 'Set Viewport' and dragging a box."
@@ -517,12 +517,14 @@ GoLive() {
     EnsureOverlayResources(gViewport["w"], gViewport["h"])
     PositionOverlay()
 
+    ; Initialize current source to the full viewport (overview state)
+    gCurSrc := CloneRect(gViewport)
+    gTgtSrc := CloneRect(gViewport)
+    gAnimSrcStart := CloneRect(gViewport)
+
     EnableLiveHotkeys(true)
     gPaused := false
-    gCurIdx := Clamp(gCurIdx, 1, gZones.Length)
-    if (gCurIdx < 1)
-        gCurIdx := 1
-    JumpToZone(gCurIdx, false)
+    gCurIdx := 0  ; Start in overview mode
     StartRendering()
     if IsSet(gSetup) && IsObject(gSetup)
         gSetup.Hide()
@@ -687,12 +689,16 @@ EnableLiveHotkeys(on := true) {
 }
 
 Overview(*) {
-    global gCurIdx, gOverlay
+    global gCurIdx, gOverlay, gCurSrc, gTgtSrc, gAnimSrcStart, gViewport, gAnimStart, gAnimEnd
     gCurIdx := 0
-    StopRendering()
-    if IsObject(gOverlay)
-        gOverlay.Hide()
-    UpdateVisualOutlines()
+    ; Reset to showing full viewport
+    gCurSrc := CloneRect(gViewport)
+    gTgtSrc := CloneRect(gViewport)
+    gAnimSrcStart := CloneRect(gViewport)
+    gAnimStart := 0
+    gAnimEnd := 0
+    ; Keep rendering to show the full viewport
+    ; Don't stop rendering or hide overlay - just show full viewport
 }
 
 PrevZone(*) {
@@ -891,12 +897,12 @@ SyncSettingsFromInputs() {
 }
 
 ResetAnimationToCurrentZone(instant := true) {
-    global gCurIdx, gZones, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd
+    global gCurIdx, gZones, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gViewport
     if (gCurIdx < 1 || gCurIdx > gZones.Length) {
-        ; No valid zone, reset to a default
-        gCurSrc := Map("x", 0, "y", 0, "w", 300, "h", 200)
-        gTgtSrc := CloneRect(gCurSrc)
-        gAnimSrcStart := CloneRect(gCurSrc)
+        ; No valid zone, show full viewport
+        gCurSrc := CloneRect(gViewport)
+        gTgtSrc := CloneRect(gViewport)
+        gAnimSrcStart := CloneRect(gViewport)
         gAnimStart := 0
         gAnimEnd := 0
         return
