@@ -795,7 +795,25 @@ JumpToZone(idx, animate := true) {
 ComputeSourceRect(zone) {
     ; Return the zone as the source rectangle
     ; Letterboxing will be applied during rendering to fit it in the viewport
-    return Map("x", zone["x"], "y", zone["y"], "w", zone["w"], "h", zone["h"])
+
+    ; Ensure zone is valid and within screen bounds
+    x := zone["x"]
+    y := zone["y"]
+    w := Max(zone["w"], 10)  ; Minimum 10 pixels
+    h := Max(zone["h"], 10)
+
+    ; Clamp to screen bounds
+    screen := GetVirtualScreenRect()
+    if (x < screen["x"])
+        x := screen["x"]
+    if (y < screen["y"])
+        y := screen["y"]
+    if (x + w > screen["x"] + screen["w"])
+        w := screen["x"] + screen["w"] - x
+    if (y + h > screen["y"] + screen["h"])
+        h := screen["y"] + screen["h"] - y
+
+    return Map("x", x, "y", y, "w", w, "h", h)
 }
 
 StartRendering() {
@@ -837,6 +855,12 @@ RenderTick() {
             gCurSrc := LerpRect(gAnimSrcStart, gTgtSrc, t)
         }
     }
+
+    ; Validate gCurSrc before rendering
+    if (gCurSrc["w"] <= 0 || gCurSrc["h"] <= 0) {
+        return
+    }
+
     if gOverlayHwnd
         PresentFrame(gCurSrc, gViewport)
 }
@@ -847,12 +871,31 @@ EaseInOutCubic(t) {
 
 LerpRect(a, b, t) {
     lerp := (x1, x2, tt) => x1 + (x2 - x1) * tt
-    return Map(
-        "x", Floor(lerp(a["x"], b["x"], t))
-      , "y", Floor(lerp(a["y"], b["y"], t))
-      , "w", Floor(lerp(a["w"], b["w"], t))
-      , "h", Floor(lerp(a["h"], b["h"], t))
-    )
+
+    ; Interpolate values
+    x := Floor(lerp(a["x"], b["x"], t))
+    y := Floor(lerp(a["y"], b["y"], t))
+    w := Floor(lerp(a["w"], b["w"], t))
+    h := Floor(lerp(a["h"], b["h"], t))
+
+    ; Ensure minimum size (prevent too-small rectangles)
+    if (w < 10)
+        w := 10
+    if (h < 10)
+        h := 10
+
+    ; Clamp to screen bounds
+    screen := GetVirtualScreenRect()
+    if (x < screen["x"])
+        x := screen["x"]
+    if (y < screen["y"])
+        y := screen["y"]
+    if (x + w > screen["x"] + screen["w"])
+        w := screen["x"] + screen["w"] - x
+    if (y + h > screen["y"] + screen["h"])
+        h := screen["y"] + screen["h"] - y
+
+    return Map("x", x, "y", y, "w", w, "h", h)
 }
 
 SetClickThrough(hwnd, enable := true) {
