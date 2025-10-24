@@ -703,13 +703,17 @@ Overview(*) {
 }
 
 PrevZone(*) {
-    global gCurIdx, gZones, gLastHotkeyTime
+    global gCurIdx, gZones, gLastHotkeyTime, gAnimStart, gAnimEnd
 
     ; Debounce
     now := A_TickCount
-    if (now - gLastHotkeyTime < 200)
+    if (now - gLastHotkeyTime < 400)
         return
     gLastHotkeyTime := now
+
+    ; Don't allow while animating
+    if (gAnimEnd > gAnimStart && now < gAnimEnd)
+        return
 
     if (gZones.Length = 0)
         return
@@ -718,13 +722,17 @@ PrevZone(*) {
 }
 
 NextZone(*) {
-    global gCurIdx, gZones, gLastHotkeyTime
+    global gCurIdx, gZones, gLastHotkeyTime, gAnimStart, gAnimEnd
 
     ; Debounce
     now := A_TickCount
-    if (now - gLastHotkeyTime < 200)
+    if (now - gLastHotkeyTime < 400)
         return
     gLastHotkeyTime := now
+
+    ; Don't allow while animating
+    if (gAnimEnd > gAnimStart && now < gAnimEnd)
+        return
 
     if (gZones.Length = 0)
         return
@@ -865,14 +873,19 @@ MakeZoneHotkey(idx) {
 }
 
 ToggleZone(idx) {
-    global gCurIdx, gLastHotkeyTime
+    global gCurIdx, gLastHotkeyTime, gAnimStart, gAnimEnd
 
-    ; Debounce: ignore if less than 200ms since last hotkey
+    ; Debounce: ignore if less than 400ms since last hotkey
     now := A_TickCount
-    if (now - gLastHotkeyTime < 200) {
+    if (now - gLastHotkeyTime < 400) {
         return
     }
     gLastHotkeyTime := now
+
+    ; Don't allow toggling while animation is in progress
+    if (gAnimEnd > gAnimStart && now < gAnimEnd) {
+        return
+    }
 
     ; If already viewing this zone, zoom out to overview
     if (gCurIdx = idx) {
