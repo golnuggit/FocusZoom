@@ -503,7 +503,11 @@ GoLive() {
     EnableLiveHotkeys(true)
     gPaused := false
     gCurIdx := 0  ; Start in overview mode
-    StartRendering()
+    gRenderOn := true  ; Mark as in live mode, but don't start timer
+
+    ; Render once to show overview
+    PresentFrame(gCurSrc, gViewport)
+
     if IsSet(gSetup) && IsObject(gSetup)
         gSetup.Hide()
 }
@@ -705,6 +709,9 @@ Overview(*) {
     gAnimSrcStart := CloneRect(gViewport)
     gAnimStart := 0
     gAnimEnd := 0
+
+    ; Render once immediately
+    PresentFrame(gCurSrc, gViewport)
 }
 
 PrevZone(*) {
@@ -738,13 +745,11 @@ NextZone(*) {
 }
 
 JumpToZone(idx, animate := false) {
-    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gPaused, gCurIdx
+    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gPaused, gCurIdx, gViewport
     if (idx < 1 || idx > gZones.Length)
         return
     EnsureOverlayGui()
     PositionOverlay()
-    if !gPaused
-        StartRendering()
     z := gZones[idx]
     tgt := ComputeSourceRect(z)
     gTgtSrc := tgt
@@ -755,6 +760,10 @@ JumpToZone(idx, animate := false) {
     gAnimSrcStart := CloneRect(tgt)
     gAnimStart := 0
     gAnimEnd := 0
+
+    ; Render once immediately, don't start continuous rendering
+    if !gPaused
+        PresentFrame(gCurSrc, gViewport)
 }
 
 ComputeSourceRect(zone) {
@@ -806,17 +815,11 @@ TogglePause(*) {
         StartRendering()
 }
 
-; ================ Render loop =====================
+; ================ Render (on-demand only) =====================
+; Note: RenderTick is no longer used - we render on-demand when zones change
 RenderTick() {
-    global gOverlayHwnd, gViewport, gCurSrc
-
-    ; Validate gCurSrc before rendering
-    if (gCurSrc["w"] <= 0 || gCurSrc["h"] <= 0) {
-        return
-    }
-
-    if gOverlayHwnd
-        PresentFrame(gCurSrc, gViewport)
+    ; This function is no longer called
+    ; Rendering now happens on-demand in JumpToZone and Overview
 }
 
 EaseInOutCubic(t) {
