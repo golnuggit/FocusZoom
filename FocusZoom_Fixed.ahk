@@ -623,9 +623,16 @@ PresentFrame(srcRect, vpRect) {
         return
     }
 
+    ; CRITICAL: Hide the overlay window BEFORE capturing the screen
+    ; Otherwise we capture the overlay itself, causing recursive zoom!
+    WinHide("ahk_id " gOverlayHwnd)
+    Sleep(50)  ; Brief delay to ensure window is hidden
+
     hdcScreen := DllCall("user32\GetDC", "ptr", 0, "ptr")
-    if !hdcScreen
+    if !hdcScreen {
+        WinShow("ahk_id " gOverlayHwnd)
         return
+    }
 
     ; Clear to black first
     hBrush := DllCall("gdi32\CreateSolidBrush", "uint", 0x000000, "ptr")
@@ -674,6 +681,9 @@ PresentFrame(srcRect, vpRect) {
         , "uint", 0
         , "ptr", blend.Ptr
         , "uint", 2) ; ULW_ALPHA
+
+    ; Show the overlay window again after rendering
+    WinShow("ahk_id " gOverlayHwnd)
 }
 
 FillAlphaChannel(width, height) {
