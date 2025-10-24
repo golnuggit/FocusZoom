@@ -612,9 +612,14 @@ PresentFrame(srcRect, vpRect) {
     if !EnsureOverlayResources(vpRect["w"], vpRect["h"])
         return
 
+    ; Validate source rect
+    if (srcRect["w"] <= 0 || srcRect["h"] <= 0) {
+        return
+    }
+
     ; Calculate destination rect with letterboxing
-    srcAspect := srcRect["w"] / Max(srcRect["h"], 1)
-    vpAspect := vpRect["w"] / Max(vpRect["h"], 1)
+    srcAspect := srcRect["w"] / srcRect["h"]
+    vpAspect := vpRect["w"] / vpRect["h"]
 
     if (srcAspect > vpAspect) {
         ; Source is wider - use full width, add top/bottom bars
@@ -630,6 +635,15 @@ PresentFrame(srcRect, vpRect) {
         dstX := Floor((vpRect["w"] - dstW) / 2)
     }
 
+    ; Ensure destination is valid
+    if (dstW <= 0 || dstH <= 0) {
+        return
+    }
+
+    hdcScreen := DllCall("user32\GetDC", "ptr", 0, "ptr")
+    if !hdcScreen
+        return
+
     ; Clear to black first
     hBrush := DllCall("gdi32\CreateSolidBrush", "uint", 0x000000, "ptr")
     rect := Buffer(16, 0)
@@ -640,9 +654,6 @@ PresentFrame(srcRect, vpRect) {
     DllCall("user32\FillRect", "ptr", gOverlayDC, "ptr", rect.Ptr, "ptr", hBrush)
     DllCall("gdi32\DeleteObject", "ptr", hBrush)
 
-    hdcScreen := DllCall("user32\GetDC", "ptr", 0, "ptr")
-    if !hdcScreen
-        return
     DllCall("gdi32\SetStretchBltMode", "ptr", gOverlayDC, "int", 4) ; HALFTONE
     DllCall("gdi32\StretchBlt"
         , "ptr", gOverlayDC
@@ -782,7 +793,8 @@ JumpToZone(idx, animate := true) {
 }
 
 ComputeSourceRect(zone) {
-    ; Since zones now match viewport aspect ratio, just use the zone directly
+    ; Return the zone as the source rectangle
+    ; Letterboxing will be applied during rendering to fit it in the viewport
     return Map("x", zone["x"], "y", zone["y"], "w", zone["w"], "h", zone["h"])
 }
 
