@@ -505,8 +505,8 @@ GoLive() {
     gCurIdx := 0  ; Start in overview mode
     gRenderOn := true  ; Mark as in live mode, but don't start timer
 
-    ; Render once to show overview
-    PresentFrame(gCurSrc, gViewport)
+    ; Start in overview mode - hide the viewport so user can interact with desktop
+    gOverlay.Hide()
 
     if IsSet(gSetup) && IsObject(gSetup)
         gSetup.Hide()
@@ -711,7 +711,7 @@ EnableLiveHotkeys(on := true) {
 }
 
 Overview(*) {
-    global gCurIdx, gCurSrc, gTgtSrc, gAnimSrcStart, gViewport, gAnimStart, gAnimEnd
+    global gCurIdx, gCurSrc, gTgtSrc, gAnimSrcStart, gViewport, gAnimStart, gAnimEnd, gOverlay
     gCurIdx := 0
     ; Instantly reset to showing full viewport - no animation
     gCurSrc := CloneRect(gViewport)
@@ -720,8 +720,9 @@ Overview(*) {
     gAnimStart := 0
     gAnimEnd := 0
 
-    ; Render once immediately
-    PresentFrame(gCurSrc, gViewport)
+    ; Hide the viewport in overview mode so user can interact with desktop
+    if IsObject(gOverlay)
+        gOverlay.Hide()
 }
 
 PrevZone(*) {
@@ -755,7 +756,7 @@ NextZone(*) {
 }
 
 JumpToZone(idx, animate := false) {
-    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gPaused, gCurIdx, gViewport
+    global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gPaused, gCurIdx, gViewport, gOverlay
     if (idx < 1 || idx > gZones.Length)
         return
     EnsureOverlayGui()
@@ -771,7 +772,10 @@ JumpToZone(idx, animate := false) {
     gAnimStart := 0
     gAnimEnd := 0
 
-    ; Render once immediately, don't start continuous rendering
+    ; Show the overlay and render the zoomed zone
+    if IsObject(gOverlay)
+        gOverlay.Show("NA")
+
     if !gPaused
         PresentFrame(gCurSrc, gViewport)
 }
