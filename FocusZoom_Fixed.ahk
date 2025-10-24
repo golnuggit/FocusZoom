@@ -64,10 +64,10 @@ Hotkey("^+p", (*) => TogglePause())
 Hotkey("^+q", (*) => ExitApp())  ; Ctrl+Shift+Q to quit
 
 ; =============== UI: Setup Window =================
-global gSetup, gZonesList, gTransEdit
+global gSetup, gZonesList
 
 MakeSetupUi() {
-    global gSetup, gZonesList, gTransEdit
+    global gSetup, gZonesList
 
     if IsSet(gSetup) && IsObject(gSetup) {
         try gSetup.Destroy()
@@ -92,9 +92,6 @@ MakeSetupUi() {
     bClr := gSetup.Add("Button", "x+5 w80", "Clear All")
     bDel.OnEvent("Click", (*) => DelSelectedZone())
     bClr.OnEvent("Click", (*) => ClearZones())
-
-    gSetup.Add("Text", "y+10", "Transition ms:")
-    gTransEdit := gSetup.Add("Edit", "w80", gTransition)
 
     gSetup.Add("Button", "y+10 w120", "Save Preset").OnEvent("Click", (*) => SavePreset())
     gSetup.Add("Button", "x+10 w120", "Load Preset").OnEvent("Click", (*) => LoadPreset())
@@ -425,14 +422,12 @@ EnsurePresetDir() {
     DirCreate dir
 }
 SavePreset() {
-    global gViewport, gZones, gTransition, gPresetPath, gTransEdit
+    global gViewport, gZones, gPresetPath
     EnsurePresetDir()
-    SyncSettingsFromInputs()
     IniWrite gViewport["x"], gPresetPath, "Viewport", "x"
     IniWrite gViewport["y"], gPresetPath, "Viewport", "y"
     IniWrite gViewport["w"], gPresetPath, "Viewport", "w"
     IniWrite gViewport["h"], gPresetPath, "Viewport", "h"
-    IniWrite gTransition, gPresetPath, "Settings", "TransitionMs"
     IniWrite gZones.Length, gPresetPath, "Settings", "ZoneCount"
     for idx, z in gZones {
         sec := "Zone" idx
@@ -445,7 +440,7 @@ SavePreset() {
 }
 
 LoadPreset() {
-    global gViewport, gViewportSet, gZones, gTransition, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused, gTransEdit
+    global gViewport, gViewportSet, gZones, gPresetPath, gSetup, gOverlayHwnd, gRenderOn, gPaused
     if !FileExist(gPresetPath) {
         MsgBox "No preset found at:`n" gPresetPath
         return
@@ -455,9 +450,6 @@ LoadPreset() {
     gViewport["w"] := Integer(IniRead(gPresetPath, "Viewport", "w", gViewport["w"]))
     gViewport["h"] := Integer(IniRead(gPresetPath, "Viewport", "h", gViewport["h"]))
     gViewportSet := true
-    gTransition := Integer(IniRead(gPresetPath, "Settings", "TransitionMs", gTransition))
-    if (gTransition < 0)
-        gTransition := 0
     cnt := Integer(IniRead(gPresetPath, "Settings", "ZoneCount", 0))
     gZones := []
     loop cnt {
@@ -471,8 +463,6 @@ LoadPreset() {
     }
     if IsSet(gSetup) && IsObject(gSetup)
         RefreshZonesList()
-    if IsObject(gTransEdit)
-        gTransEdit.Value := gTransition
     UpdateVisualOutlines()
     if gOverlayHwnd {
         wasRendering := gRenderOn
@@ -718,30 +708,24 @@ EnableLiveHotkeys(on := true) {
 }
 
 Overview(*) {
-    global gCurIdx, gOverlay, gCurSrc, gTgtSrc, gAnimSrcStart, gViewport, gAnimStart, gAnimEnd
+    global gCurIdx, gCurSrc, gTgtSrc, gAnimSrcStart, gViewport, gAnimStart, gAnimEnd
     gCurIdx := 0
-    ; Reset to showing full viewport
+    ; Instantly reset to showing full viewport - no animation
     gCurSrc := CloneRect(gViewport)
     gTgtSrc := CloneRect(gViewport)
     gAnimSrcStart := CloneRect(gViewport)
     gAnimStart := 0
     gAnimEnd := 0
-    ; Keep rendering to show the full viewport
-    ; Don't stop rendering or hide overlay - just show full viewport
 }
 
 PrevZone(*) {
-    global gCurIdx, gZones, gLastHotkeyTime, gAnimStart, gAnimEnd
+    global gCurIdx, gZones, gLastHotkeyTime
 
     ; Debounce
     now := A_TickCount
     if (now - gLastHotkeyTime < 400)
         return
     gLastHotkeyTime := now
-
-    ; Don't allow while animating
-    if (gAnimEnd > gAnimStart && now < gAnimEnd)
-        return
 
     if (gZones.Length = 0)
         return
@@ -750,7 +734,7 @@ PrevZone(*) {
 }
 
 NextZone(*) {
-    global gCurIdx, gZones, gLastHotkeyTime, gAnimStart, gAnimEnd
+    global gCurIdx, gZones, gLastHotkeyTime
 
     ; Debounce
     now := A_TickCount
@@ -758,17 +742,13 @@ NextZone(*) {
         return
     gLastHotkeyTime := now
 
-    ; Don't allow while animating
-    if (gAnimEnd > gAnimStart && now < gAnimEnd)
-        return
-
     if (gZones.Length = 0)
         return
     gCurIdx := (gCurIdx >= gZones.Length) ? 1 : (gCurIdx + 1)
     JumpToZone(gCurIdx)
 }
 
-JumpToZone(idx, animate := true) {
+JumpToZone(idx, animate := false) {
     global gZones, gTgtSrc, gCurSrc, gAnimSrcStart, gAnimStart, gAnimEnd, gTransition, gPaused, gCurIdx
     if (idx < 1 || idx > gZones.Length)
         return
@@ -780,16 +760,12 @@ JumpToZone(idx, animate := true) {
     tgt := ComputeSourceRect(z)
     gTgtSrc := tgt
     gCurIdx := idx
-    if !animate {
-        gCurSrc := CloneRect(tgt)
-        gAnimSrcStart := CloneRect(tgt)
-        gAnimStart := 0
-        gAnimEnd := 0
-        return
-    }
-    gAnimSrcStart := CloneRect(gCurSrc)
-    gAnimStart := A_TickCount
-    gAnimEnd := gAnimStart + gTransition
+
+    ; Always instant - no animation
+    gCurSrc := CloneRect(tgt)
+    gAnimSrcStart := CloneRect(tgt)
+    gAnimStart := 0
+    gAnimEnd := 0
 }
 
 ComputeSourceRect(zone) {
@@ -843,18 +819,7 @@ TogglePause(*) {
 
 ; ================ Render loop =====================
 RenderTick() {
-    global gOverlayHwnd, gViewport, gCurSrc, gTgtSrc, gAnimSrcStart, gAnimStart, gAnimEnd
-    if (gAnimEnd > gAnimStart) {
-        now := A_TickCount
-        if (now >= gAnimEnd) {
-            gCurSrc := CloneRect(gTgtSrc)
-            gAnimStart := 0, gAnimEnd := 0
-        } else {
-            t := (now - gAnimStart) / (gAnimEnd - gAnimStart)
-            t := EaseInOutCubic(t)
-            gCurSrc := LerpRect(gAnimSrcStart, gTgtSrc, t)
-        }
-    }
+    global gOverlayHwnd, gViewport, gCurSrc
 
     ; Validate gCurSrc before rendering
     if (gCurSrc["w"] <= 0 || gCurSrc["h"] <= 0) {
@@ -945,7 +910,7 @@ MakeZoneHotkey(idx) {
 }
 
 ToggleZone(idx) {
-    global gCurIdx, gLastHotkeyTime, gAnimStart, gAnimEnd
+    global gCurIdx, gLastHotkeyTime
 
     ; Debounce: ignore if less than 400ms since last hotkey
     now := A_TickCount
@@ -953,11 +918,6 @@ ToggleZone(idx) {
         return
     }
     gLastHotkeyTime := now
-
-    ; Don't allow toggling while animation is in progress
-    if (gAnimEnd > gAnimStart && now < gAnimEnd) {
-        return
-    }
 
     ; If already viewing this zone, zoom out to overview
     if (gCurIdx = idx) {
