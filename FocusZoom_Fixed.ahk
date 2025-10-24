@@ -80,7 +80,7 @@ MakeSetupUi() {
     gSetup.Add("Button", "w130", "Set Viewport").OnEvent("Click", (*) => SetViewport())
 
     gSetup.Add("Text", "y+10", "2) Click 'Add Zone' and drag rectangles over areas you want to zoom.")
-    gSetup.Add("Text", "y+5", "(Zones will auto-match viewport aspect ratio)")
+    gSetup.Add("Text", "y+5", "(Zones can be any size - letterboxing will be added as needed)")
     btnAdd := gSetup.Add("Button", "w130", "Add Zone")
     btnAdd.OnEvent("Click", (*) => AddZone())
 
@@ -330,14 +330,12 @@ SetViewport() {
 }
 
 AddZone() {
-    global gZones, gViewport, gViewportSet
+    global gZones, gViewportSet
     if !gViewportSet {
         MsgBox "Please set the viewport first before adding zones."
         return
     }
-    ; Calculate viewport aspect ratio
-    aspectRatio := gViewport["w"] / Max(gViewport["h"], 1)
-    r := SelectRect("Drag to set a ZONE (will match viewport aspect ratio)", aspectRatio)
+    r := SelectRect("Drag to set a ZONE (any size - letterboxing will be added)")
     if !IsObject(r)
         return
     gZones.Push(Map("x", r.x, "y", r.y, "w", r.w, "h", r.h))
@@ -614,13 +612,41 @@ PresentFrame(srcRect, vpRect) {
     if !EnsureOverlayResources(vpRect["w"], vpRect["h"])
         return
 
+    ; Calculate destination rect with letterboxing
+    srcAspect := srcRect["w"] / Max(srcRect["h"], 1)
+    vpAspect := vpRect["w"] / Max(vpRect["h"], 1)
+
+    if (srcAspect > vpAspect) {
+        ; Source is wider - use full width, add top/bottom bars
+        dstW := vpRect["w"]
+        dstH := Floor(vpRect["w"] / srcAspect)
+        dstX := 0
+        dstY := Floor((vpRect["h"] - dstH) / 2)
+    } else {
+        ; Source is taller or same - use full height, add left/right bars
+        dstH := vpRect["h"]
+        dstW := Floor(vpRect["h"] * srcAspect)
+        dstY := 0
+        dstX := Floor((vpRect["w"] - dstW) / 2)
+    }
+
+    ; Clear to black first
+    hBrush := DllCall("gdi32\CreateSolidBrush", "uint", 0x000000, "ptr")
+    rect := Buffer(16, 0)
+    NumPut("int", 0, rect, 0)
+    NumPut("int", 0, rect, 4)
+    NumPut("int", vpRect["w"], rect, 8)
+    NumPut("int", vpRect["h"], rect, 12)
+    DllCall("user32\FillRect", "ptr", gOverlayDC, "ptr", rect.Ptr, "ptr", hBrush)
+    DllCall("gdi32\DeleteObject", "ptr", hBrush)
+
     hdcScreen := DllCall("user32\GetDC", "ptr", 0, "ptr")
     if !hdcScreen
         return
     DllCall("gdi32\SetStretchBltMode", "ptr", gOverlayDC, "int", 4) ; HALFTONE
     DllCall("gdi32\StretchBlt"
         , "ptr", gOverlayDC
-        , "int", 0, "int", 0, "int", vpRect["w"], "int", vpRect["h"]
+        , "int", dstX, "int", dstY, "int", dstW, "int", dstH
         , "ptr", hdcScreen
         , "int", srcRect["x"], "int", srcRect["y"], "int", srcRect["w"], "int", srcRect["h"]
         , "uint", 0x00CC0020)
