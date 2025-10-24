@@ -15,7 +15,6 @@ InitDpiAwareness()
 ; - GDI capture/scale (StretchBlt) for a quick POC.
 
 ; --------------- Settings ---------------
-global gTransition  := 300          ; ms for zone transition animation
 global gFrameMs     := 33           ; ~30 fps while live (raise to 50–66 if CPU high)
 global gPaused      := false
 global gPresetPath  := A_AppData "\FocusZoom\preset.ini"
@@ -74,32 +73,23 @@ MakeSetupUi() {
     }
 
     gSetup := Gui("+AlwaysOnTop", "FocusZoom - Setup")
-    gSetup.MarginX := 10, gSetup.MarginY := 10
+    gSetup.MarginX := 10, gSetup.MarginY := 8
 
-    gSetup.Add("Text",, "1) Click 'Set Viewport' and drag a box where the zoom will appear.")
-    gSetup.Add("Button", "w130", "Set Viewport").OnEvent("Click", (*) => SetViewport())
+    gSetup.Add("Text", "w280", "1) Set Viewport (blue box = where zoom appears)")
+    gSetup.Add("Button", "w135 h25", "Set Viewport").OnEvent("Click", (*) => SetViewport())
+    gSetup.Add("Button", "x+10 yp w135 h25", "Go Live").OnEvent("Click", (*) => GoLive())
 
-    gSetup.Add("Text", "y+10", "2) Click 'Add Zone' and drag rectangles over areas you want to zoom.")
-    gSetup.Add("Text", "y+5", "(Zones can be any size - letterboxing will be added as needed)")
-    btnAdd := gSetup.Add("Button", "w130", "Add Zone")
-    btnAdd.OnEvent("Click", (*) => AddZone())
+    gSetup.Add("Text", "xm y+10 w280", "2) Add Zones (green boxes = areas to zoom)")
+    gSetup.Add("Button", "w90 h25", "Add Zone").OnEvent("Click", (*) => AddZone())
+    gSetup.Add("Button", "x+5 yp w90 h25", "Delete").OnEvent("Click", (*) => DelSelectedZone())
+    gSetup.Add("Button", "x+5 yp w90 h25", "Clear All").OnEvent("Click", (*) => ClearZones())
 
-    gSetup.Add("Text", "y+10", "Zones (press 1..9 to jump during Live):")
-    gZonesList := gSetup.Add("ListBox", "w260 h160")
+    gZonesList := gSetup.Add("ListBox", "xm y+5 w280 h120")
 
-    rowBtns := gSetup.Add("GroupBox", "w260 h50", "Manage")
-    bDel := gSetup.Add("Button", "x+10 yp+20 w80", "Delete")
-    bClr := gSetup.Add("Button", "x+5 w80", "Clear All")
-    bDel.OnEvent("Click", (*) => DelSelectedZone())
-    bClr.OnEvent("Click", (*) => ClearZones())
+    gSetup.Add("Button", "xm y+10 w135 h25", "Save Preset").OnEvent("Click", (*) => SavePreset())
+    gSetup.Add("Button", "x+10 yp w135 h25", "Load Preset").OnEvent("Click", (*) => LoadPreset())
 
-    gSetup.Add("Button", "y+10 w120", "Save Preset").OnEvent("Click", (*) => SavePreset())
-    gSetup.Add("Button", "x+10 w120", "Load Preset").OnEvent("Click", (*) => LoadPreset())
-
-    gSetup.Add("Text", "y+10", "3) Click 'Go Live' to start overlay and hotkeys.")
-    gSetup.Add("Button", "w120", "Go Live").OnEvent("Click", (*) => GoLive())
-
-    gSetup.Add("Text", "y+10", "Hotkeys: F9=Setup | Ctrl+Shift+P=Pause | Ctrl+Shift+Q=Quit")
+    gSetup.Add("Text", "xm y+10 w280", "Hotkeys: F9=Setup | 1-9=Zones | Esc=Exit | Ctrl+Shift+Q=Quit")
 
     gSetup.OnEvent("Close", (*) => gSetup.Hide())
 }
@@ -313,7 +303,6 @@ SetViewport() {
         return
     gViewport := Map("x", r.x, "y", r.y, "w", r.w, "h", r.h)
     gViewportSet := true
-    MsgBox "Viewport set to: " RectStr(gViewport)
     UpdateVisualOutlines()
     if gOverlayHwnd {
         wasRendering := gRenderOn
@@ -954,14 +943,6 @@ ApplyColorKey(hwnd, color) {
     ex |= 0x80000  ; WS_EX_LAYERED
     DllCall("user32\SetWindowLongPtr", "ptr", hwnd, "int", -20, "ptr", ex, "ptr")
     DllCall("user32\SetLayeredWindowAttributes", "ptr", hwnd, "uint", color, "uchar", 0, "uint", 1)
-}
-
-SyncSettingsFromInputs() {
-    global gTransition, gTransEdit
-    if IsObject(gTransEdit) && gTransEdit.Value != ""
-        gTransition := Integer(gTransEdit.Value)
-    if (gTransition < 0)
-        gTransition := 0
 }
 
 ResetAnimationToCurrentZone(instant := true) {
